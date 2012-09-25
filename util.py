@@ -26,5 +26,5 @@ def loadgrey16(path):
 	if len(s) != w * h * 2:
 		raise TypeError
 	a = numpy.fromstring(s, numpy.uint16)
-	m = a.reshape((w, h))
-
+	m = a.reshape((h, w))
+	return m
