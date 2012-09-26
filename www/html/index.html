@@ -1,0 +1,32 @@
+<html>
+<head>
+	<title>FFOCT web lab</title>
+</head>
+<body>
+	<script src='/js/jquery.js'></script>
+	<script src='/js/webffoct.js'></script>
+	
+	<script language=javascript >
+		$(document).ready(function () {
+			
+			webffoct.getMasters({
+				success: function(data) {
+					var masters = data;
+					for (var i = 0; i < masters.length; i ++) {
+						var id = masters[i].id;
+						var props = masters[i].props;
+						$("#div-masters").append(
+							"<div><image id=thumb-{0} src='{1}' /></div>".format(
+								id, 
+								webffoct.url('masters', id, 'thumbnail')
+							)
+						);
+					}
+				} // success
+			});
+		});
+	</script>
+	<div id=div-masters>
+	</div>
+</body>
+</html>

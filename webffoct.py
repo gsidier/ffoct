@@ -7,6 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__f
 import re
 
 from ffoct.util import loadgrey16, loadmask
+from PIL import Image
 
 RE_SIZE = r'([0-9]+)x([0-9]+)mm'
 RE_DEPTH = r'([0-9.]+)um'
@@ -22,8 +23,10 @@ class SampleServer(object):
 	
 	def __init__(self, imgdir, workdir):
 		self.imgdir = imgdir
-		self.masters = { } # { id: (path, props) }
+		self.workdir = workdir
+		self.masters = { } # { id: (fname, props) }
 		self.masks = { } # { id: { label: path } }
+		self.find_imgs()
 		
 	def find_imgs(self):
 		filenames = os.listdir(self.imgdir)
@@ -57,8 +60,9 @@ class SampleServer(object):
 	
 	def master_thumbnail(self, id):
 		thumb_path = self._master_thumbnail_path(id)
-		path, props = self.masters[id]
-		if not os.path.exists(thumb_path) or os.path.getmtime(thumb_path) < path:
+		fname, props = self.masters[id]
+		path = os.path.join(self.imgdir, fname)
+		if not os.path.exists(thumb_path) or os.path.getmtime(thumb_path) < os.path.getmtime(path):
 			try:
 				os.path.remove(thumb_path)
 			except:
@@ -69,6 +73,7 @@ class SampleServer(object):
 			w2 = int(w / fact)
 			h2 = int(h / fact)
 			im.thumbnail((w2, h2))
+			im = im.convert(mode = 'I') # 8-bit
 			im.save(thumb_path)
 		return thumb_path
 
@@ -77,12 +82,73 @@ class WebFFOCT:
 	def __init__(self, samples):
 		self.samples = samples
 	
+	def setup_routes(self, routes):
+		routes.connect(
+			name = 'masters',
+			route = '/masters/',
+			controller = self, 
+			action = 'get_masters',
+			conditions = dict(method = ['GET'])
+		)
+		routes.connect(
+			name = 'master_thumbnail',
+			route = '/masters/{id}/thumbnail',
+			controller = self,
+			action = 'get_thumbnail',
+			conditions = dict(method = ['GET'])
+		)
+	
 	def get_masters(self, **kwargs):
 		cherrypy.response.headers['Content-type'] = 'application/json'
-		res = self.samples.masters.keys()
+		#res = self.samples.masters.items()
+		res = list({'id': id, 'props': props} for (id, (path, props)) in self.samples.masters.iteritems() )
 		res_json = json.dumps(res)
 		return res_json
-		
+	
 	def get_thumbnail(self, id, **kwargs):
-		
-		
+		cherrypy.response.headers['Content-type'] = 'image/png'
+		path = self.samples.master_thumbnail(id)
+		f = file(path, 'r')
+		return f.read()
+
+if __name__ == '__main__':
+	import os, sys
+	
+	imgdir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'img'))
+	workdir = os.path.abspath(os.path.join(os.path.dirname(__file__), 'tmp'))
+	samplesrv = SampleServer(imgdir, workdir)
+	
+	api = WebFFOCT(samplesrv)
+	
+	routes = cherrypy.dispatch.RoutesDispatcher()
+	routes.mapper.explicit = False
+	api.setup_routes(routes)
+	
+	HTDOCS = os.path.abspath(os.path.join(os.path.dirname(__file__), 'www'))
+	
+	global_config = {
+		'server.socket_host': '0.0.0.0',
+		'server.socket_port': 8080,
+	}
+	
+	root_config = {
+		'/': {
+			'tools.staticdir.on': True,
+			'tools.staticdir.dir': HTDOCS,
+			'tools.staticdir.index': 'index.html',
+		}
+	}
+	cherrypy.tree.mount(None, '/', config = root_config)
+	
+	API_ROOT = '/api'
+	api_config = {
+		'/': {
+			'request.dispatch': routes,
+			'tools.sessions.on': True
+		}
+	}
+	cherrypy.tree.mount(None, API_ROOT, config = api_config)
+	
+	cherrypy.engine.start()
+	cherrypy.engine.block()
+
