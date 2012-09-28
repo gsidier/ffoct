@@ -15,10 +15,17 @@
 					for (var i = 0; i < masters.length; i ++) {
 						var id = masters[i].id;
 						var props = masters[i].props;
+						var tab_props = $("<table></table>");
+						for (var prop in props) {
+							tab_props.append("<tr><td>{0}</td><td>{1}</td></tr>".format(
+								prop, props[prop]
+							));
+						}
 						$("#div-masters").append(
-							"<div><image id=thumb-{0} src='{1}' /></div>".format(
+							"<div><table><tr><td><image id=thumb-{0} src='{1}' /></td><td><div>{2}</div></td></tr></table></div>".format(
 								id, 
-								webffoct.url('masters', id, 'thumbnail')
+								webffoct.url('masters', id, 'thumbnail'),
+								webffoct.outerHtml(tab_props)
 							)
 						);
 					}

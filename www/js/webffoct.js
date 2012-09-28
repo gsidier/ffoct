@@ -29,6 +29,10 @@ var webffoct = new function() {
 		return this.API_ROOT + argsarr.join('/');
 	};
 
+	this.outerHtml = function(elem) {
+		return $(elem).clone().wrap('<p>').parent().html();
+	}
+
 	this.getMasters = function(args) {
 		// args: {
 		//   success:
