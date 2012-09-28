@@ -64,12 +64,12 @@ class SampleServer(object):
 		path = os.path.join(self.imgdir, fname)
 		if not os.path.exists(thumb_path) or os.path.getmtime(thumb_path) < os.path.getmtime(path):
 			try:
-				os.path.remove(thumb_path)
-			except:
+				os.remove(thumb_path)
+			except OSError:
 				pass
 			im = Image.open(path)
 			w, h = im.size
-			fact = float(min(w, h)) / float(THUMBNAIL_SZ)
+			fact = float(max(w, h)) / float(THUMBNAIL_SZ)
 			w2 = int(w / fact)
 			h2 = int(h / fact)
 			im.thumbnail((w2, h2))
