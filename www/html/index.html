@@ -7,6 +7,10 @@
 	<script src='/js/webffoct.js'></script>
 	
 	<script language=javascript >
+		function selectMaster(id) {
+			window.alert(id);
+		}
+		
 		$(document).ready(function () {
 			
 			webffoct.getMasters({
@@ -22,7 +26,7 @@
 							));
 						}
 						$("#div-masters").append(
-							"<div><table><tr><td><image id=thumb-{0} src='{1}' /></td><td><div>{2}</div></td></tr></table></div>".format(
+							"<div><table><tr><td><a href='javascript: selectMaster(\"{0}\")'><image id=thumb-{0} src='{1}' /></a></td><td><div>{2}</div></td></tr></table></div>".format(
 								id, 
 								webffoct.url('masters', id, 'thumbnail'),
 								webffoct.outerHtml(tab_props)
