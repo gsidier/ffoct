@@ -15,20 +15,18 @@ def cvimshow(im):
 def loadmask(path):
 	im = Image.open(path)
 	im = im.convert(mode = 'L')
-	s = im.tostring()
-	w, h = im.size
-	if len(s) != w * h:
-		raise TypeError
-	a = numpy.fromstring(s, bool)
-	m = a.reshape((h, w))
+	m = numpy.array(im, dtype = bool)
 	return m
 
 def loadgrey16(path):
 	im = Image.open(path)
-	s = im.tostring()
-	w, h = im.size
-	if len(s) != w * h * 2:
-		raise TypeError
-	a = numpy.fromstring(s, numpy.uint16)
-	m = a.reshape((h, w))
+	im = im.convert('I')
+	m = numpy.array(im, dtype = numpy.uint16)
 	return m
+
+def loadgrey8(path):
+	m = loadgrey16(path)
+	m /= 256
+	m = m.astype(numpy.uint8)
+	return m
+
