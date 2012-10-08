@@ -6,7 +6,7 @@ import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')))
 import re
 
-from ffoct.util import loadgrey16, loadmask
+from ffoct.util import loadgrey8, loadgrey16, loadmask
 from ffoct.samples import find_samples
 from PIL import Image
 
@@ -20,7 +20,7 @@ REGEXES = {
 
 THUMBNAIL_SZ = 100
 LORES_SZ = 500
-LORES_QUAL = .85
+LORES_QUAL = 85
 
 SAMPLE_SZ = 200
 SAMP_THUMB_SZ = 100
@@ -107,13 +107,13 @@ class SampleServer(object):
 				os.remove(lores_path)
 			except OSError:
 				pass
-			im = Image.open(master_path)
+			m = loadgrey8(master_path)
+			im = Image.fromarray(m, mode = 'L')
 			w, h = im.size
 			fact = float(max(w, h)) / float(LORES_SZ)
 			w2 = int(w / fact)
 			h2 = int(h / fact)
-			im = im.resize((w2, h2))
-			im = im.convert(mode=  'I') # 8-but
+			im.thumbnail((w2, h2))
 			im.save(lores_path, quality = LORES_QUAL)
 		return lores_path
 	
@@ -170,6 +170,13 @@ class WebFFOCT:
 			conditions = dict(method = ['GET'])
 		)
 		routes.connect(
+			name = 'master_lores',
+			route = '/masters/{id}/lores',
+			controller = self,
+			action = 'get_lores',
+			conditions = dict(method = ['GET'])
+		)
+		routes.connect(
 			name = 'samples',
 			route = '/masters/{id}/samples',
 			controller = self,
@@ -179,7 +186,6 @@ class WebFFOCT:
 	
 	def get_masters(self, **kwargs):
 		cherrypy.response.headers['Content-type'] = 'application/json'
-		#res = self.samples.masters.items()
 		res = list({'id': id, 'props': props} for (id, (path, props)) in self.samples.masters.iteritems() )
 		res_json = json.dumps(res)
 		return res_json
