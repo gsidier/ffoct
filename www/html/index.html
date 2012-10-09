@@ -6,13 +6,38 @@
 	<script src='/js/jquery.js'></script>
 	<script src='/js/webffoct.js'></script>
 	
+	<div id=div-menubar>
+		<a href="javascript: viewMasters()">main</a>
+	</div>
+	
+	<div id=div-main>
+		
+		<div class=level1 id=div-masters>
+		</div>
+		
+		<div class=level1 id=div-master-view style="display: none;" >
+			<div id=div-master-view-master>
+				<img id=img-master-view-master src='' />
+			</div>
+			<div id=div-master-view-thumbnails>
+				<table id=tbl-master-view-thumbnails>
+				</table>
+			</div>
+		</div>
+	</div>
+
 	<script language=javascript >
+		
+		var webffoctGlobals = {
+			currentId: undefined
+		};
+		
 		function selectMaster(id) {
 			window.alert(id);
+			displayMaster(id);
 		}
 		
-		$(document).ready(function () {
-			
+		function viewMasters() {
 			webffoct.getMasters({
 				success: function(data) {
 					var masters = data;
@@ -34,10 +59,19 @@
 						);
 					}
 				} // success
-			});
+			}); // webffoct.getMasters
+		} // function viewMasters
+		
+		function displayMaster(id) {
+			webffoctGlobals.currentId = id;
+			$("#div-main .level1").attr('style', "display: none;");
+			$("#div-master-view").attr('style', "display: block;");
+			$("#img-master-view-master").attr('src', '/api/masters/{0}/lores'.format(id));
+		}
+		
+		$(document).ready(function () {
+			viewMasters();
 		});
 	</script>
-	<div id=div-masters>
-	</div>
 </body>
 </html>
