@@ -1,8 +1,26 @@
 <html>
 <head>
 	<title>FFOCT web lab</title>
+	
+	<style>
+		body {
+			font-family: monospace;
+		}
+		
+		.data {
+			border-collapse: collapse;
+		}
+		.data,.data th,.data td {
+			border: 1px solid black;
+		}
+		.fmt-cell {
+			display: table-cell;
+		}
+		
+	</style>
 </head>
 <body>
+	
 	<script src='/js/jquery.js'></script>
 	<script src='/js/webffoct.js'></script>
 	
@@ -12,15 +30,17 @@
 	
 	<div id=div-main>
 		
-		<div class=level1 id=div-masters>
+		<div class=master-level id=div-masters>
 		</div>
 		
-		<div class=level1 id=div-master-view style="display: none;" >
-			<div id=div-master-view-master>
+		<div class=master-level id=div-master-view>
+			<div style="float: left;" id=div-master-view-master>
 				<img id=img-master-view-master src='' />
 			</div>
-			<div id=div-master-view-thumbnails>
-				<table id=tbl-master-view-thumbnails>
+			<div class=sample-level style="float: left; padding: 5mm;" id=div-master-view-samples>
+				<table class=data id=tbl-master-view-samples >
+					<thead></thead>
+					<tbody></tbody>
 				</table>
 			</div>
 		</div>
@@ -29,15 +49,24 @@
 	<script language=javascript >
 		
 		var webffoctGlobals = {
-			currentId: undefined
+			  masterId: undefined
+			, samples: { }
+			, label: undefined
 		};
 		
 		function selectMaster(id) {
-			window.alert(id);
 			displayMaster(id);
 		}
 		
+		function selectSampleCat(label) {
+			displaySamples(label);
+		}
+		
 		function viewMasters() {
+			$("#div-main .master-level").hide();
+			$("#div-masters").empty();
+			$("#div-masters").show();
+			
 			webffoct.getMasters({
 				success: function(data) {
 					var masters = data;
@@ -63,10 +92,35 @@
 		} // function viewMasters
 		
 		function displayMaster(id) {
-			webffoctGlobals.currentId = id;
-			$("#div-main .level1").attr('style', "display: none;");
-			$("#div-master-view").attr('style', "display: block;");
+			webffoctGlobals.masterId = id;
+			$("#div-main .master-level").hide();
+			$("#div-master-view").show();
 			$("#img-master-view-master").attr('src', '/api/masters/{0}/lores'.format(id));
+			var thead = $("#tbl-master-view-samples thead");
+			var tbody = $("#tbl-master-view-samples tbody");
+			thead.html("<tr><th>type</th><th>count</th></tr>");
+			tbody.html("<tr><td colspan=2>loading ...</td></tr>");
+			$.ajax({
+				url: webffoct.url('masters', id, 'samples'),
+				dataType: 'json',
+				success: function(data) {
+					webffoctGlobals.samples = data;
+					tbody.empty();
+					for (var label in webffoctGlobals.samples) {
+						tbody.append(
+							'<tr><td><a href="javascript: selectSampleCat(\'{label}\');">{label}</td><td>{len}</td><tr>'.format({ 
+								  id: id
+								, label: label
+								, len: webffoctGlobals.samples[label].length
+							})
+						);
+					}
+				}
+			});
+		}
+		
+		function displaySamples(label) {
+			$(".sample-level").hide();
 		}
 		
 		$(document).ready(function () {

@@ -4,11 +4,16 @@
 'use strict';
 
 //////// utilities //////// 
-String.prototype.format = function() {
+String.prototype.format = function(hash) {
   var args = arguments;
   return this.replace(/{(\d+)}/g, function(match, number) { 
     return typeof args[number] != 'undefined'
       ? args[number]
+      : match
+    ;
+  }).replace(/{([a-zA-Z_]\w*)}/g, function(match, word) {
+    return typeof hash[word] != 'undefined'
+      ? hash[word]
       : match
     ;
   });
