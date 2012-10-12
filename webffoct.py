@@ -118,7 +118,7 @@ class SampleServer(object):
 		return lores_path
 	
 	def _sample_thumbnail_path(self, id, x, w, y, h):
-		return os.path.join(self.workdir, 'sample.%s.%d-%d.%dx%d.thumb.png')
+		return os.path.join(self.workdir, 'sample.%s.%d-%d.%dx%d.thumb.png' % (id, x, y, w, h))
 	
 	def sample_thumbnail(self, id, x, y, w, h):
 		thumb_path = self._sample_thumbnail_path(id, x, y, w, h)
@@ -140,7 +140,7 @@ class SampleServer(object):
 		mask = loadmask(mask_path)
 		return mask
 	
-	def samples(self, id):
+	def _samples(self, id):
 		im = self.get_master(id)
 		samples = { }
 		for label in self.masks[id]:
@@ -149,6 +149,18 @@ class SampleServer(object):
 			samples[label] = samps
 		return samples
 	
+	def samples(self, id):
+		samples_path = os.path.join(self.workdir, 'samples-%s-%sx%s.json' % (id, SAMPLE_SZ, SAMPLE_SZ))
+		master_path = self._master_path(id)
+		if need_update(samples_path, master_path):
+			data = self._samples(id)
+			with file(samples_path, 'w') as f:
+				json.dump(data, f)
+		with file(samples_path, 'r') as f:
+			data = json.load(f)
+		return data
+		
+		
 class WebFFOCT:
 	
 	def __init__(self, samples):
