@@ -24,7 +24,7 @@
 	<script src='/js/jquery.js'></script>
 	<script src='/js/webffoct.js'></script>
 	
-	<div id=div-menubar>
+	<div class=menu id=div-menubar>
 		<a href="javascript: viewMasters()">main</a>
 	</div>
 	
@@ -34,15 +34,24 @@
 		</div>
 		
 		<div class=master-level id=div-master-view>
-			<div style="float: left;" id=div-master-view-master>
+			<div id=div-master-view-master style="float: left;">
 				<img id=img-master-view-master src='' />
 			</div>
-			<div class=sample-level style="float: left; padding: 5mm;" id=div-master-view-samples>
-				<table class=data id=tbl-master-view-samples >
+
+			<div style="float: left; padding: 5mm;">
+			<div class=menu id=sample-menu>
+				<a href="javascript: displaySampleStats()">stats</a>
+			
+			<div class=sample-level id=div-sample-stats>
+				<table class=data id=tbl-sample-stats >
 					<thead></thead>
 					<tbody></tbody>
 				</table>
 			</div>
+			
+			<div class=sample-level id=div-sample-thumbnails>
+			</div>
+			
 		</div>
 	</div>
 
@@ -81,9 +90,9 @@
 						}
 						$("#div-masters").append(
 							"<div><table><tr><td><a href='javascript: selectMaster(\"{0}\")'><image id=thumb-{0} src='{1}' /></a></td><td><div>{2}</div></td></tr></table></div>".format(
-								id, 
-								webffoct.url('masters', id, 'thumbnail'),
-								webffoct.outerHtml(tab_props)
+								  id
+								, webffoct.url('masters', id, 'thumbnail')
+								, webffoct.outerHtml(tab_props)
 							)
 						);
 					}
@@ -96,8 +105,15 @@
 			$("#div-main .master-level").hide();
 			$("#div-master-view").show();
 			$("#img-master-view-master").attr('src', '/api/masters/{0}/lores'.format(id));
-			var thead = $("#tbl-master-view-samples thead");
-			var tbody = $("#tbl-master-view-samples tbody");
+			displaySampleStats();
+		}
+		
+		function displaySampleStats() {
+			$(".sample-level").hide();
+			$("#div-sample-stats").show();
+			
+			var thead = $("#tbl-sample-stats thead");
+			var tbody = $("#tbl-sample-stats tbody");
 			thead.html("<tr><th>type</th><th>count</th></tr>");
 			tbody.html("<tr><td colspan=2>loading ...</td></tr>");
 			$.ajax({
@@ -121,6 +137,9 @@
 		
 		function displaySamples(label) {
 			$(".sample-level").hide();
+			$("#div-sample-thumbnails").show();
+			$("#div-sample-thumbnails").empty();
+			
 		}
 		
 		$(document).ready(function () {
