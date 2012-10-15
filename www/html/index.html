@@ -140,6 +140,17 @@
 			$("#div-sample-thumbnails").show();
 			$("#div-sample-thumbnails").empty();
 			
+			var samples = webffoctGlobals.samples[label];
+			for (var i = 0; i < samples.length; i ++) {
+				var sam = samples[i];
+				$("div-sample-thumbnails").append(
+					"<img src='{0}' />".format(
+						webffoct.url('masters', id, 'samples', 
+							'?x={0}&y={1}&w={2}&h={3}'.format(sam.x, sam.y, sam.w, sam.h)
+						)
+					)
+				);
+			}
 		}
 		
 		$(document).ready(function () {

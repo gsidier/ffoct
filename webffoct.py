@@ -195,6 +195,13 @@ class WebFFOCT:
 			action = 'get_samples',
 			conditions = dict(method = ['GET'])
 		)
+		routes.connect(
+			name = 'sample',
+			route = '/masters/{id}/sample/thumbnail',
+			controller = self,
+			action = 'sample_thumbnail',
+			conditions = dict(method = ['GET'])
+		)
 	
 	def get_masters(self, **kwargs):
 		cherrypy.response.headers['Content-type'] = 'application/json'

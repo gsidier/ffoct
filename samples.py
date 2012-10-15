@@ -36,7 +36,7 @@ def find_samples(im, mask, w, h):
 	for i in xrange(0, W, w):
 		for j in xrange(0, H, h):
 			if numpy.sum(mask[i:i+h, j:j+w]) == w * h:
-				found.append(((i, i+h), (j, j+w)))
+				found.append({'y': i, 'h': h, 'x': j, 'w': w})
 		
 	return found
 
