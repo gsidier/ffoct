@@ -125,8 +125,9 @@ class SampleServer(object):
 		master_path = self._master_path(id)
 		if need_update(thumb_path, master_path):
 			im = Image.open(master_path)
-			smp = im.crop((x, y, x + w, y + H))
+			smp = im.crop((x, y, x + w, y + h))
 			smp.thumbnail((SAMP_THUMB_SZ, SAMP_THUMB_SZ))
+			smp = smp.convert(mode = 'I') # 8-bit
 			smp.save(thumb_path)
 		return thumb_path
 
@@ -159,8 +160,32 @@ class SampleServer(object):
 		with file(samples_path, 'r') as f:
 			data = json.load(f)
 		return data
+	
+class StatsServer(object):
+	
+	def __init__(self, samples):
+		self.samples = samples
+
+	def filter_samples(self, masters = None, labels = None, filter = None):
+		if masters is None: 
+			masters = self.samples.masters.keys()
 		
-		
+		samples = [ (label, master, samp) 
+			for master in masters 
+			for (label, lst) in self.samples.samples(master).items()
+			if (labels is not None) and label in labels
+			for sample in lst 
+			if filter and filter(sample
+		]
+		return samples
+	
+	def calc_stats(self, stat, samples):
+		res = list( (label, master, samp, stat(master, samp)) 
+			for (label, master, samp) in samples )
+	
+	def histogram(self, stats):
+		pass
+	
 class WebFFOCT:
 	
 	def __init__(self, samples):
@@ -199,7 +224,7 @@ class WebFFOCT:
 			name = 'sample',
 			route = '/masters/{id}/sample/thumbnail',
 			controller = self,
-			action = 'sample_thumbnail',
+			action = 'get_sample_thumbnail',
 			conditions = dict(method = ['GET'])
 		)
 	
@@ -226,6 +251,13 @@ class WebFFOCT:
 		res = self.samples.samples(id)
 		res_json = json.dumps(res)
 		return res_json
+	
+	def get_sample_thumbnail(self, id, x, y, w, h, **kwargs):
+		cherrypy.response.headers['Content-type'] = 'image/png'
+		x, y, w, h = map(int, (x, y, w, h))
+		path = self.samples.sample_thumbnail(id, x=x, y=y, w=w, h=h)
+		f = file(path, 'r')
+		return f.read()
 
 if __name__ == '__main__':
 	import os, sys

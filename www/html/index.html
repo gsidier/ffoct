@@ -33,25 +33,26 @@
 		<div class=master-level id=div-masters>
 		</div>
 		
-		<div class=master-level id=div-master-view>
-			<div id=div-master-view-master style="float: left;">
+		<div class=master-level id=div-master-view >
+			<div id=div-master-view-master style="float: left; width: 40%;">
 				<img id=img-master-view-master src='' />
 			</div>
 
-			<div style="float: left; padding: 5mm;">
-			<div class=menu id=sample-menu>
-				<a href="javascript: displaySampleStats()">stats</a>
+			<div style="float: right; padding: 5mm; width: 55%;">
+				<div class=menu id=sample-menu>
+					<a href="javascript: displaySampleStats()">stats</a>
+				</div>
 			
-			<div class=sample-level id=div-sample-stats>
-				<table class=data id=tbl-sample-stats >
-					<thead></thead>
-					<tbody></tbody>
-				</table>
+				<div class=sample-level id=div-sample-stats>
+					<table class=data id=tbl-sample-stats >
+						<thead></thead>
+						<tbody></tbody>
+					</table>
+				</div>
+			
+				<div class=sample-level id=div-sample-thumbnails>
+				</div>
 			</div>
-			
-			<div class=sample-level id=div-sample-thumbnails>
-			</div>
-			
 		</div>
 	</div>
 
@@ -145,11 +146,10 @@
 			var id = webffoctGlobals.masterId;
 			for (var i = 0; i < samples.length; i ++) {
 				var sam = samples[i];
-				$("div-sample-thumbnails").append(
-					"<img src='{0}' />".format(
-						webffoct.url('masters', id, 'sample', 'thumbnail', 
+				$("#div-sample-thumbnails").append(
+					"<span style='padding:1mm;'><img src='{0}' /></span>".format(
+						webffoct.url('masters', id, 'sample', 'thumbnail') +  
 							'?x={0}&y={1}&w={2}&h={3}'.format(sam.x, sam.y, sam.w, sam.h)
-						)
 					)
 				);
 			}
