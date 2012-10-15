@@ -175,7 +175,7 @@ class StatsServer(object):
 			for (label, lst) in self.samples.samples(master).items()
 			if (labels is not None) and label in labels
 			for sample in lst 
-			if filter and filter(sample
+			if filter and filter(master, sample)
 		]
 		return samples
 	
