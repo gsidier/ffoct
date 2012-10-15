@@ -116,6 +116,7 @@
 			var tbody = $("#tbl-sample-stats tbody");
 			thead.html("<tr><th>type</th><th>count</th></tr>");
 			tbody.html("<tr><td colspan=2>loading ...</td></tr>");
+			var id = webffoctGlobals.masterId;
 			$.ajax({
 				url: webffoct.url('masters', id, 'samples'),
 				dataType: 'json',
@@ -141,11 +142,12 @@
 			$("#div-sample-thumbnails").empty();
 			
 			var samples = webffoctGlobals.samples[label];
+			var id = webffoctGlobals.masterId;
 			for (var i = 0; i < samples.length; i ++) {
 				var sam = samples[i];
 				$("div-sample-thumbnails").append(
 					"<img src='{0}' />".format(
-						webffoct.url('masters', id, 'samples', 
+						webffoct.url('masters', id, 'sample', 'thumbnail', 
 							'?x={0}&y={1}&w={2}&h={3}'.format(sam.x, sam.y, sam.w, sam.h)
 						)
 					)
