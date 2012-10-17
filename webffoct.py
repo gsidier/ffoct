@@ -6,9 +6,12 @@ import os, sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')))
 import re
 
-from ffoct.util import loadgrey8, loadgrey16, loadmask
+from ffoct.util import loadgrey8, loadgrey16, loadmask, distrib
 from ffoct.samples import find_samples
+from glcm import glcm, energy, entropy, contrast
 from PIL import Image
+import numpy
+import csv
 
 RE_SIZE = r'([0-9]+)x([0-9]+)mm'
 RE_DEPTH = r'([0-9.]+)um'
@@ -70,7 +73,7 @@ class SampleServer(object):
 							break
 					self.masters[id] = (fname, props)
 	
-	def _master_path(self, id):
+	def master_path(self, id):
 		fname, props = self.masters[id]
 		master_path = os.path.join(self.imgdir, fname)
 		return master_path
@@ -80,7 +83,7 @@ class SampleServer(object):
 	
 	def master_thumbnail(self, id):
 		thumb_path = self._master_thumbnail_path(id)
-		master_path = self._master_path(id)
+		master_path = self.master_path(id)
 		if not os.path.exists(thumb_path) or os.path.getmtime(thumb_path) < os.path.getmtime(master_path):
 			try:
 				os.remove(thumb_path)
@@ -101,7 +104,7 @@ class SampleServer(object):
 
 	def master_lores(self, id):
 		lores_path = self._master_lores_path(id)
-		master_path = self._master_path(id)
+		master_path = self.master_path(id)
 		if not os.path.exists(lores_path) or os.path.getmtime(lores_path) < os.path.getmtime(master_path):
 			try:
 				os.remove(lores_path)
@@ -122,7 +125,7 @@ class SampleServer(object):
 	
 	def sample_thumbnail(self, id, x, y, w, h):
 		thumb_path = self._sample_thumbnail_path(id, x, y, w, h)
-		master_path = self._master_path(id)
+		master_path = self.master_path(id)
 		if need_update(thumb_path, master_path):
 			im = Image.open(master_path)
 			smp = im.crop((x, y, x + w, y + h))
@@ -132,7 +135,7 @@ class SampleServer(object):
 		return thumb_path
 
 	def get_master(self, id):
-		master_path = self._master_path(id)
+		master_path = self.master_path(id)
 		master = loadgrey16(master_path)
 		return master
 	
@@ -152,7 +155,7 @@ class SampleServer(object):
 	
 	def samples(self, id):
 		samples_path = os.path.join(self.workdir, 'samples-%s-%sx%s.json' % (id, SAMPLE_SZ, SAMPLE_SZ))
-		master_path = self._master_path(id)
+		master_path = self.master_path(id)
 		if need_update(samples_path, master_path):
 			data = self._samples(id)
 			with file(samples_path, 'w') as f:
@@ -163,8 +166,17 @@ class SampleServer(object):
 	
 class StatsServer(object):
 	
+	workdir = property(lambda self: self.samples.workdir)
+	GLCM_DX = 0
+	GLCM_DY = 10
+	
 	def __init__(self, samples):
 		self.samples = samples
+		self.statfuncs = {
+			'glcm-entropy': lambda master, samp: entropy(self.glcm(master, samp, GLCM_DX, GLCM_DY)),
+			'glcm-energy': lambda master, samp: energy(self.glcm(master, samp, GLCM_DX, GLCM_DY)),
+			'glcm-contrast': lambda master, samp: contrast(self.glcm(master, samp, GLCM_DX, GLCM_DY)),
+		}
 
 	def filter_samples(self, masters = None, labels = None, filter = None):
 		if masters is None: 
@@ -182,9 +194,50 @@ class StatsServer(object):
 	def calc_stats(self, stat, samples):
 		res = list( (label, master, samp, stat(master, samp)) 
 			for (label, master, samp) in samples )
+		return res
 	
-	def histogram(self, stats):
-		pass
+	def distrib(self, stats):
+		X = [ val for (label, master, samp, val) in stats ]
+		q = numpy.linspace(0, 1, 21)
+		m, p = distrib(X, q)
+		return m, p	
+	
+	def _glcm_path(self, master, x, y, w, h, dx, dy):
+		return os.path.join(self.workdir, 'sample-glcm.%s.%d-%d.%dx%d.(%d_%d).csv' % (master, x, y, w, h, dx, dy))
+	
+	def get_glcm(self, master, samp, dx, dy):
+		x, y, h, w = [samp[k] for k in 'xyhw']
+		glcm_path = self._glcm_path(master, x, y, w, h, dx, dy)
+		master_path = self.samples.master_path(master)
+		if need_update(glcm_path, master_path):
+			m = util.sampflt(master_path, x, y, w, h)
+			C = glcm(m, dx, dy)
+			with file(glcm_path, 'w') as f:
+				csvout = csv.writer(f, lineterminator = '\n')
+				for row in C:
+					csvout.writerow(row)
+		with file(glcm_path, 'r') as f:
+			csvin = csv.reader(f)
+			C = [ map(float, row) for row in csvin ]
+			C = numpy.array(C)
+		return C
+	
+	def _stat_path(self, master, stat):
+		return os.path.join(self.workdir, 'sample-%s.%s.json' % (stat, master))
+	
+	def get_stat(self, master, stat):
+		stat_path = self._stat_path(master, stat)
+		master_path = self.samples.master_path(master)
+		if need_update(stat_path, master_path):
+			res = [ ]
+			with file(stat_path, 'w') as out:
+				allsamples = self.samples.samples(master)
+				for (label, samples) in allsamples.iteritems():
+					statfunc = self.statfuncs[stat]
+					for samp in samples:
+						val = statfunc(master, samp)
+						res.append([label, master, samp, val])
+				json.dump(res, out)
 	
 class WebFFOCT:
 	
@@ -227,6 +280,13 @@ class WebFFOCT:
 			action = 'get_sample_thumbnail',
 			conditions = dict(method = ['GET'])
 		)
+		routes.connect(
+			name = 'stat',
+			route = '/stats/{stat}',
+			controller = self,
+			action = 'get_stat',
+			conditions = dict(method = ['GET'])
+		)
 	
 	def get_masters(self, **kwargs):
 		cherrypy.response.headers['Content-type'] = 'application/json'
@@ -258,6 +318,9 @@ class WebFFOCT:
 		path = self.samples.sample_thumbnail(id, x=x, y=y, w=w, h=h)
 		f = file(path, 'r')
 		return f.read()
+	
+	def get_stat(self, stat, **kwargs):
+		pass
 
 if __name__ == '__main__':
 	import os, sys
