@@ -3,6 +3,8 @@ from pylab import imread, imshow
 from PIL import Image
 import numpy
 from copy import copy
+from numpy import median
+from scipy.stats.mstats import mquantiles
 
 def cvim2array(im):
 	return numpy.array(im)[:,:,::-1]
@@ -58,10 +60,10 @@ def distrib(X, q):
 	i, = numpy.where(abs(dx) > 1e-10)
 	i = [0] + list(i + 1)
 	qi = q[i]
-	dq = q[i:] - q[:-1]
+	dq = qi[1:] - qi[:-1]
 	xi = x[i]
 	dx = xi[1:] - xi[:-1]
-	m = numpy.array([median([Xi for Xi in X if Xi >= a and Xi < b])
+	m = numpy.array([median(X[(X >= a) & (X < b)])
 		for (a, b) in zip(xi[:-1], xi[1:])])
 	p = dq / dx
 	return (m, p)
