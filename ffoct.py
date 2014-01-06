@@ -128,10 +128,10 @@ if __name__ == '__main__':
 		errs = [ ]
 		for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
 			im_patches = proj[i1:i2]
+			im_patches *= std.reshape(1, len(std))
+			im_patches += mean.reshape(1, len(mean))
 			im_patches = im_patches.reshape(len(im_patches), SAMP_WIDTH, SAMP_HEIGHT)
 			approx = reconstruct_from_patches_2d(im_patches, master.size[::-1])
-			approx *= std.reshape(1, len(std))
-			approx += mean.reshape(1, len(mean))
 			approxs.append(approx)
 			errs.append(approx - master)
 	with Timer("Build distrib ..."):
