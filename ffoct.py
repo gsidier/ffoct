@@ -143,16 +143,16 @@ if __name__ == '__main__':
 				x[i, 0] = j
 			else:
 				x[i, 1] = j
-		for i, (a. b) in enumerate(x):
+		for i, (a, b) in enumerate(x):
 			x[i, :] = min(a, b), max(a, b)
 		counts = Counter(map(tuple, x))
 		c = numpy.array(counts.values(), dtype = float)
 		p = c / sum(c)
 		entropy = - numpy.sum(p * numpy.log2(p))
 	print "entropy of non-zeros: %f ( = log2 %d for %d patches)" % (entropy, int(2 ** entropy), len(x))
-	cond_distrib = numpy.zeros(N_COMP)
+	cond_distrib = numpy.zeros((N_COMP, N_COMP))
 	for (i, j) in x:
-		if i > 0 and j > 0:
+		if i >= 0 and j >= 0:
 			cond_distrib[i, j] += 1
 			cond_distrib[j, i] += 1
 	cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
