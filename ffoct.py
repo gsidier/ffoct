@@ -6,11 +6,15 @@ import numpy
 import pylab
 from math import ceil, sqrt
 from time import time
+from collections import Counter
 
 from sklearn.decomposition import DictionaryLearning
 from sklearn.decomposition import MiniBatchDictionaryLearning
 from sklearn.feature_extraction.image import extract_patches_2d
 from sklearn.feature_extraction.image import reconstruct_from_patches_2d
+from sklearn import cluster
+from scipy import sparse
+from scipy.sparse import csr_matrix
 
 RESIZE_FACT = 1. / 20.
 SAMP_WIDTH = 7
@@ -45,13 +49,13 @@ def display(fit):
 	for i, comp in enumerate(fit.components_[:n]):
 		pylab.subplot(rows, cols, i + 1)
 		pylab.imshow(comp.reshape(SAMP_WIDTH, SAMP_HEIGHT), 
-			cmap = pylab.cm.gray_r, interpolation = 'nearest')
+			cmap = pylab.cm.gray, interpolation = 'nearest')
 		pylab.xticks(())
 		pylab.yticks(())
 
 def imshow(*args, **kwargs):
 	if 'cmap' not in kwargs:
-		kwargs['cmap'] = pylab.cm.gray_r
+		kwargs['cmap'] = pylab.cm.gray
 	if 'interpolation' not in kwargs:
 		kwargs['interpolation'] = 'nearest'
 	pylab.imshow(*args, **kwargs)
@@ -92,24 +96,64 @@ if __name__ == '__main__':
 		data = list( numpy.array(patch, numpy.float32).flatten() for patch in patches )
 		data = numpy.array(data)
 		data /= 256.
-		data -= numpy.mean(data, axis = 0)
-		data /= numpy.std(data, axis = 0)
+		mean = numpy.mean(data, axis = 0)
+		data -= mean
+		std = numpy.std(data, axis = 0)
+		data /= std
 	with Timer("Fitting model ..."):
 		cols = ceil(sqrt(N_COMP))
 		rows = ceil(N_COMP / float(cols))
-		dictionary = MiniBatchDictionaryLearning(n_components = N_COMP, alpha = 1)
-		fit = dictionary.fit(data)
+		model = MiniBatchDictionaryLearning(n_components = N_COMP, alpha = 1)
+		fit = model.fit(data)
 	with Timer("Display components ..."): 
 		pylab.ion()
 		pylab.show()
 		display(fit)
 	with Timer("Compute projection ..."):
-		dictionary.set_params(transform_algorithm = 'omp', transform_n_nonzero_coefs = N_ATOMS)
-		code = dictionary.transform(data)
-		proj = numpy.dot(code, fit.components_)
+		model.set_params(transform_algorithm = 'omp', transform_n_nonzero_coefs = N_ATOMS)
+		# the intention is simply this:
+		#	code = model.transform(data)
+		# but we chunk it up and store it in a sparse matrix for efficiency
+		code = []
+		CHUNK = 1000
+		for i in xrange(0, len(data), CHUNK):
+			data_i = data[i:i + CHUNK]
+			code_i = model.transform(data_i)
+			code_i = csr_matrix(code_i)
+			code.append(code_i)
+		code = sparse.vstack(code)
+		proj = code.dot(fit.components_)
 	with Timer("Reconstruct images ..."):
+		approxs = [ ]
+		errs = [ ]
 		for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
 			im_patches = proj[i1:i2]
 			im_patches = im_patches.reshape(len(im_patches), SAMP_WIDTH, SAMP_HEIGHT)
-			reconstruct_from_patches_2d(im_patches, master.size)
+			approx = reconstruct_from_patches_2d(im_patches, master.size[::-1])
+			approx *= std.reshape(1, len(std))
+			approx += mean.reshape(1, len(mean))
+			approxs.append(approx)
+			errs.append(approx - master)
+	with Timer("Build distrib ..."):
+		nz = code.nonzero()
+		x = numpy.zeros((max(nz[0]) + 1, 2), dtype = int)
+		x[:] = -1
+		for i, j in zip(nz[0], nz[1]):
+			if x[i, 0] == -1:
+				x[i, 0] = j
+			else:
+				x[i, 1] = j
+		for i, (a. b) in enumerate(x):
+			x[i, :] = min(a, b), max(a, b)
+		counts = Counter(map(tuple, x))
+		c = numpy.array(counts.values(), dtype = float)
+		p = c / sum(c)
+		entropy = - numpy.sum(p * numpy.log2(p))
+	print "entropy of non-zeros: %f ( = log2 %d for %d patches)" % (entropy, int(2 ** entropy), len(x))
+	cond_distrib = numpy.zeros(N_COMP)
+	for (i, j) in x:
+		if i > 0 and j > 0:
+			cond_distrib[i, j] += 1
+			cond_distrib[j, i] += 1
+	cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
 
