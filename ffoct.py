@@ -53,6 +53,18 @@ def display(fit):
 		pylab.xticks(())
 		pylab.yticks(())
 
+def display_clustered_patches(patches, pclust, colors = [ [1., 1., 1.], [1., 1., 0. ], [0., 0., 1.] ]):
+	n = min(400, len(patches))
+	rows = int(ceil(sqrt(n)))
+	cols = int(ceil(n / rows))
+	I = sorted(range(len(patches)), key = lambda i: pclust.labels_[i])
+	for i, comp, label in zip(I, patches[I], sorted(pclust.labels_.astype(int))):
+		pylab.subplot(rows, cols, i + 1)
+		pylab.imshow(comp.reshape(SAMP_WIDTH, SAMP_HEIGHT, 1) * numpy.reshape(colors[label + 1], (1, 1, 3)), 
+			interpolation = 'nearest')
+		pylab.xticks(())
+		pylab.yticks(())
+
 def imshow(*args, **kwargs):
 	if 'cmap' not in kwargs:
 		kwargs['cmap'] = pylab.cm.gray
@@ -71,28 +83,35 @@ if __name__ == '__main__':
 	
 	idx = [ 0 ]
 	
-	for path in paths:
-		try:
-			master = sampleset.generate(os.path.join(config.master_dir, path))
-		except IOError: # not an image?
-			print >> sys.stderr, "Cannot load '%s' - skipping" % path
-			continue
-		master = reduce(master)
-		if not os.path.exists(master.path):
-			master.save()
-		masters.append(master.image)
-		w, h = master.image.size
-		im_patches = extract_patches_2d(numpy.array(master.image), (SAMP_WIDTH, SAMP_HEIGHT))
-		"""
-		for x in xrange(0, w, SAMP_WIDTH):
-			for y in xrange(0, h, SAMP_HEIGHT):
-				patch = master.image.crop((x, y, x + SAMP_WIDTH, y + SAMP_HEIGHT))
-				patches.append(patch)
-		"""
-		patches.extend(im_patches)
-		idx.append(len(patches))
+	with Timer("Extract patches ..."):
+		# Extract patches from the data.
+		# These are all the (SAMP_WIDTH x SAMP_HEIGHT) rectangles in the image whatever the position 
+		# (note: they will overlap).
+		for path in paths:
+			try:
+				master = sampleset.generate(os.path.join(config.master_dir, path))
+			except IOError: # not an image?
+				print >> sys.stderr, "Cannot load '%s' - skipping" % path
+				continue
+			master = reduce(master)
+			if not os.path.exists(master.path):
+				master.save()
+			masters.append(master.image)
+			w, h = master.image.size
+			im_patches = extract_patches_2d(numpy.array(master.image), (SAMP_WIDTH, SAMP_HEIGHT))
+			"""
+			for x in xrange(0, w, SAMP_WIDTH):
+				for y in xrange(0, h, SAMP_HEIGHT):
+					patch = master.image.crop((x, y, x + SAMP_WIDTH, y + SAMP_HEIGHT))
+					patches.append(patch)
+			"""
+			patches.extend(im_patches)
+			idx.append(len(patches))
 	
 	with Timer("Normalizing data ..."):
+		# Normalize the data:
+		# Group the patches, reshape the patches as simple vectors,
+		# rescale and center the data.
 		data = list( numpy.array(patch, numpy.float32).flatten() for patch in patches )
 		data = numpy.array(data)
 		data /= 256.
@@ -101,15 +120,18 @@ if __name__ == '__main__':
 		std = numpy.std(data, axis = 0)
 		data /= std
 	with Timer("Fitting model ..."):
+		# Fit the sparse model using Dictionary Learning.
 		cols = ceil(sqrt(N_COMP))
 		rows = ceil(N_COMP / float(cols))
 		model = MiniBatchDictionaryLearning(n_components = N_COMP, alpha = 1)
 		fit = model.fit(data)
 	with Timer("Display components ..."): 
+		# Display the basis components (aka the dictionary).
 		pylab.ion()
 		pylab.show()
 		display(fit)
 	with Timer("Compute projection ..."):
+		# Project the input patches onto the basis using Orthonormal Matching Pursuit with 2 components.
 		model.set_params(transform_algorithm = 'omp', transform_n_nonzero_coefs = N_ATOMS)
 		# the intention is simply this:
 		#	code = model.transform(data)
@@ -124,6 +146,7 @@ if __name__ == '__main__':
 		code = sparse.vstack(code)
 		proj = code.dot(fit.components_)
 	with Timer("Reconstruct images ..."):
+		# Reconstruct the input images from the projected patches.
 		approxs = [ ]
 		errs = [ ]
 		for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
@@ -135,6 +158,8 @@ if __name__ == '__main__':
 			approxs.append(approx)
 			errs.append(approx - master)
 	with Timer("Build distrib ..."):
+		# Each input patch is modelled as a mixture of two basis patches.
+		# For each basis patch we build the distribution cond_distrib[i, j] = P(other patch = j | one patch is i).
 		nz = code.nonzero()
 		x = numpy.zeros((max(nz[0]) + 1, 2), dtype = int)
 		x[:] = -1
@@ -148,12 +173,15 @@ if __name__ == '__main__':
 		counts = Counter(map(tuple, x))
 		c = numpy.array(counts.values(), dtype = float)
 		p = c / sum(c)
-		entropy = - numpy.sum(p * numpy.log2(p))
+		cond_distrib = numpy.zeros((N_COMP, N_COMP))
+		for (i, j) in x:
+			if i >= 0 and j >= 0:
+				cond_distrib[i, j] += 1
+				cond_distrib[j, i] += 1
+		cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
+	entropy = - numpy.sum(p * numpy.log2(p))
 	print "entropy of non-zeros: %f ( = log2 %d for %d patches)" % (entropy, int(2 ** entropy), len(x))
-	cond_distrib = numpy.zeros((N_COMP, N_COMP))
-	for (i, j) in x:
-		if i >= 0 and j >= 0:
-			cond_distrib[i, j] += 1
-			cond_distrib[j, i] += 1
-	cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
-
+	with Timer("Cluster patches using DBSCAN"):
+		dbscan = cluster.DBSCAN(eps = .1)
+		pclust = dbscan.fit(cond_distrib)
+		
