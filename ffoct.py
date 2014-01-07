@@ -164,9 +164,9 @@ if __name__ == '__main__':
 				code.append(code_i)
 			code = sparse.vstack(code)
 			basis = fit.components_ 
-			basis = basis * std
-			basis = basis + mean
 			proj = code.dot(basis)
+			proj *= std
+			proj += mean
 			proj = proj.reshape(len(proj), SAMP_WIDTH, SAMP_HEIGHT)
 	if (not restart) or steps[restart] <= steps['RECONSTRUCT']:
 		with Timer("Reconstruct images ..."):
@@ -215,15 +215,19 @@ if __name__ == '__main__':
 			red_basis = basis * (kclust.labels_ == 0).reshape(N_COMP, 1)
 			green_basis = basis * (kclust.labels_ == 1).reshape(N_COMP, 1)
 			red_proj = code.dot(red_basis)
+			red_proj *= std
+			red_proj += mean
 			red_proj = red_proj.reshape(len(red_proj), SAMP_WIDTH, SAMP_HEIGHT)
 			green_proj = code.dot(green_basis)
+			green_proj *= std
+			green_proj += mean
 			green_proj = green_proj.reshape(len(green_proj), SAMP_WIDTH, SAMP_HEIGHT)
 			tinted = [ ]
 			for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
-				red = reconstruct_from_patches(red_proj[i1, i2], master.size[::-1])
-				red = red.reshape(master.size[1], master.size[0], 3) * numpy.reshape([1, 0, 0], (1, 1, 3)) 
-				green = reconstruct_from_patches(green_proj[i1, i2], master.size[::-1])
-				green = green.reshape(master.size[1], master.size[0], 3) * numpy.reshape([0, 1, 0], (1, 1, 3)) 
+				red = reconstruct_from_patches_2d(red_proj[i1:i2], master.size[::-1])
+				red = red.reshape(master.size[1], master.size[0], 1) * numpy.reshape([1, 0, 0], (1, 1, 3)) 
+				green = reconstruct_from_patches_2d(green_proj[i1:i2], master.size[::-1])
+				green = green.reshape(master.size[1], master.size[0], 1) * numpy.reshape([0, 1, 0], (1, 1, 3)) 
 				mix = red + green
 				tinted.append(mix)
 
