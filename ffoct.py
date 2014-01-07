@@ -75,113 +75,155 @@ def imshow(*args, **kwargs):
 if __name__ == '__main__':
 	import os, sys 
 	
-	paths = os.listdir(config.master_dir)
+	restart = None
+	if sys.argv[1:]:
+		restart, = sys.argv[1:]
 	
-	masters = []
-	patches = []
-	sampleset = SampleSet(config)
+	steps = dict([ (lbl, i) for (i, lbl) in enumerate([
+		'EXTRACT_PATCHES',
+		'NORMALIZE_DATA',
+		'FIT_MODEL',
+		'DISPLAY_BASIS',
+		'COMPUTE_PROJ',
+		'RECONSTRUCT',
+		'BUILD_DISTRIB',
+		'DBSCAN',
+		'KMEANS',
+		'TINT_IMAGE',
+	])])
 	
-	idx = [ 0 ]
-	
-	with Timer("Extract patches ..."):
-		# Extract patches from the data.
-		# These are all the (SAMP_WIDTH x SAMP_HEIGHT) rectangles in the image whatever the position 
-		# (note: they will overlap).
-		for path in paths:
-			try:
-				master = sampleset.generate(os.path.join(config.master_dir, path))
-			except IOError: # not an image?
-				print >> sys.stderr, "Cannot load '%s' - skipping" % path
-				continue
-			master = reduce(master)
-			if not os.path.exists(master.path):
-				master.save()
-			masters.append(master.image)
-			w, h = master.image.size
-			im_patches = extract_patches_2d(numpy.array(master.image), (SAMP_WIDTH, SAMP_HEIGHT))
-			"""
-			for x in xrange(0, w, SAMP_WIDTH):
-				for y in xrange(0, h, SAMP_HEIGHT):
-					patch = master.image.crop((x, y, x + SAMP_WIDTH, y + SAMP_HEIGHT))
-					patches.append(patch)
-			"""
-			patches.extend(im_patches)
-			idx.append(len(patches))
-	
-	with Timer("Normalizing data ..."):
-		# Normalize the data:
-		# Group the patches, reshape the patches as simple vectors,
-		# rescale and center the data.
-		data = list( numpy.array(patch, numpy.float32).flatten() for patch in patches )
-		data = numpy.array(data)
-		data /= 256.
-		mean = numpy.mean(data, axis = 0)
-		data -= mean
-		std = numpy.std(data, axis = 0)
-		data /= std
-	with Timer("Fitting model ..."):
-		# Fit the sparse model using Dictionary Learning.
-		cols = ceil(sqrt(N_COMP))
-		rows = ceil(N_COMP / float(cols))
-		model = MiniBatchDictionaryLearning(n_components = N_COMP, alpha = 1)
-		fit = model.fit(data)
-	with Timer("Display components ..."): 
-		# Display the basis components (aka the dictionary).
-		pylab.ion()
-		pylab.show()
-		display(fit)
-	with Timer("Compute projection ..."):
-		# Project the input patches onto the basis using Orthonormal Matching Pursuit with 2 components.
-		model.set_params(transform_algorithm = 'omp', transform_n_nonzero_coefs = N_ATOMS)
-		# the intention is simply this:
-		#	code = model.transform(data)
-		# but we chunk it up and store it in a sparse matrix for efficiency
-		code = []
-		CHUNK = 1000
-		for i in xrange(0, len(data), CHUNK):
-			data_i = data[i:i + CHUNK]
-			code_i = model.transform(data_i)
-			code_i = csr_matrix(code_i)
-			code.append(code_i)
-		code = sparse.vstack(code)
-		proj = code.dot(fit.components_)
-	with Timer("Reconstruct images ..."):
-		# Reconstruct the input images from the projected patches.
-		approxs = [ ]
-		errs = [ ]
-		for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
-			im_patches = proj[i1:i2]
-			im_patches *= std.reshape(1, len(std))
-			im_patches += mean.reshape(1, len(mean))
-			im_patches = im_patches.reshape(len(im_patches), SAMP_WIDTH, SAMP_HEIGHT)
-			approx = reconstruct_from_patches_2d(im_patches, master.size[::-1])
-			approxs.append(approx)
-			errs.append(approx - master)
-	with Timer("Build distrib ..."):
-		# Each input patch is modelled as a mixture of two basis patches.
-		# For each basis patch we build the distribution cond_distrib[i, j] = P(other patch = j | one patch is i).
-		nz = code.nonzero()
-		x = numpy.zeros((max(nz[0]) + 1, 2), dtype = int)
-		x[:] = -1
-		for i, j in zip(nz[0], nz[1]):
-			if x[i, 0] == -1:
-				x[i, 0] = j
-			else:
-				x[i, 1] = j
-		for i, (a, b) in enumerate(x):
-			x[i, :] = min(a, b), max(a, b)
-		counts = Counter(map(tuple, x))
-		c = numpy.array(counts.values(), dtype = float)
-		p = c / sum(c)
-		cond_distrib = numpy.zeros((N_COMP, N_COMP))
-		for (i, j) in x:
-			if i >= 0 and j >= 0:
-				cond_distrib[i, j] += 1
-				cond_distrib[j, i] += 1
-		cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
-	entropy = - numpy.sum(p * numpy.log2(p))
-	print "entropy of non-zeros: %f ( = log2 %d for %d patches)" % (entropy, int(2 ** entropy), len(x))
-	with Timer("Cluster patches using DBSCAN"):
-		dbscan = cluster.DBSCAN(eps = .1)
-		pclust = dbscan.fit(cond_distrib)
+	if (not restart) or steps[restart] <= steps['EXTRACT_PATCHES']:
+		with Timer("Extract patches ..."):
+			paths = os.listdir(config.master_dir)
+			sampleset = SampleSet(config)
+			masters = []
+			patches = []
+			idx = [ 0 ]
+			# Extract patches from the data.
+			# These are all the (SAMP_WIDTH x SAMP_HEIGHT) rectangles in the image whatever the position 
+			# (note: they will overlap).
+			for path in paths:
+				try:
+					master = sampleset.generate(os.path.join(config.master_dir, path))
+				except IOError: # not an image?
+					print >> sys.stderr, "Cannot load '%s' - skipping" % path
+					continue
+				master = reduce(master)
+				if not os.path.exists(master.path):
+					master.save()
+				masters.append(master.image)
+				w, h = master.image.size
+				im_patches = extract_patches_2d(numpy.array(master.image), (SAMP_WIDTH, SAMP_HEIGHT))
+				"""
+				for x in xrange(0, w, SAMP_WIDTH):
+					for y in xrange(0, h, SAMP_HEIGHT):
+						patch = master.image.crop((x, y, x + SAMP_WIDTH, y + SAMP_HEIGHT))
+						patches.append(patch)
+				"""
+				patches.extend(im_patches)
+				idx.append(len(patches))
 		
+	if (not restart) or steps[restart] <= steps['NORMALIZE_DATA']:
+		with Timer("Normalizing data ..."):
+			# Normalize the data:
+			# Group the patches, reshape the patches as simple vectors,
+			# rescale and center the data.
+			data = list( numpy.array(patch, numpy.float32).flatten() for patch in patches )
+			data = numpy.array(data)
+			data /= 256.
+			mean = numpy.mean(data, axis = 0)
+			data -= mean
+			std = numpy.std(data, axis = 0)
+			data /= std
+	if (not restart) or steps[restart] <= steps['FIT_MODEL']:
+		with Timer("Fitting model ..."):
+			# Fit the sparse model using Dictionary Learning.
+			cols = ceil(sqrt(N_COMP))
+			rows = ceil(N_COMP / float(cols))
+			model = MiniBatchDictionaryLearning(n_components = N_COMP, alpha = 1)
+			fit = model.fit(data)
+	if (not restart) or steps[restart] <= steps['DISPLAY_BASIS']:
+		with Timer("Display components ..."): 
+			# Display the basis components (aka the dictionary).
+			pylab.ion()
+			pylab.show()
+			display(fit)
+	if (not restart) or steps[restart] <= steps['COMPUTE_PROJ']:
+		with Timer("Compute projection ..."):
+			# Project the input patches onto the basis using Orthonormal Matching Pursuit with 2 components.
+			model.set_params(transform_algorithm = 'omp', transform_n_nonzero_coefs = N_ATOMS)
+			# the intention is simply this:
+			#	code = model.transform(data)
+			# but we chunk it up and store it in a sparse matrix for efficiency
+			code = []
+			CHUNK = 1000
+			for i in xrange(0, len(data), CHUNK):
+				data_i = data[i:i + CHUNK]
+				code_i = model.transform(data_i)
+				code_i = csr_matrix(code_i)
+				code.append(code_i)
+			code = sparse.vstack(code)
+			basis = fit.components_ 
+			basis = basis * std
+			basis = basis + mean
+			proj = code.dot(basis)
+			proj = proj.reshape(len(proj), SAMP_WIDTH, SAMP_HEIGHT)
+	if (not restart) or steps[restart] <= steps['RECONSTRUCT']:
+		with Timer("Reconstruct images ..."):
+			# Reconstruct the input images from the projected patches.
+			approxs = [ ]
+			errs = [ ]
+			for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
+				approx = reconstruct_from_patches_2d(proj[i1:i2], master.size[::-1])
+				approxs.append(approx)
+				errs.append(approx - master)
+	if (not restart) or steps[restart] <= steps['BUILD_DISTRIB']:
+		with Timer("Build distrib ..."):
+			# Each input patch is modelled as a mixture of two basis patches.
+			# For each basis patch we build the distribution cond_distrib[i, j] = P(other patch = j | one patch is i).
+			nz = code.nonzero()
+			x = numpy.zeros((max(nz[0]) + 1, 2), dtype = int)
+			x[:] = -1
+			for i, j in zip(nz[0], nz[1]):
+				if x[i, 0] == -1:
+					x[i, 0] = j
+				else:
+					x[i, 1] = j
+			for i, (a, b) in enumerate(x):
+				x[i, :] = min(a, b), max(a, b)
+			counts = Counter(map(tuple, x))
+			c = numpy.array(counts.values(), dtype = float)
+			p = c / sum(c)
+			cond_distrib = numpy.zeros((N_COMP, N_COMP))
+			for (i, j) in x:
+				if i >= 0 and j >= 0:
+					cond_distrib[i, j] += 1
+					cond_distrib[j, i] += 1
+			cond_distrib /= numpy.sum(cond_distrib, axis = 1).reshape((N_COMP, 1))
+		entropy = - numpy.sum(p * numpy.log2(p))
+		print "entropy of non-zeros: %f ( = log2 %d for %d patches)" % (entropy, int(2 ** entropy), len(x))
+	if (not restart) or steps[restart] <= steps['DBSCAN']:
+		with Timer("Cluster patches using DBSCAN"):
+			dbscan = cluster.DBSCAN(eps = .1)
+			pclust = dbscan.fit(cond_distrib)
+	if (not restart) or steps[restart] <= steps['KMEANS']:
+		with Timer("Cluster patches using KMeans"):
+			kmeans = cluster.KMeans(n_clusters = 2)
+			kclust = kmeans.fit(cond_distrib)
+	if (not restart) or steps[restart] <= steps['TINT_IMAGE']:
+		with Timer("Tinting image"):
+			red_basis = basis * (kclust.labels_ == 0).reshape(N_COMP, 1)
+			green_basis = basis * (kclust.labels_ == 1).reshape(N_COMP, 1)
+			red_proj = code.dot(red_basis)
+			red_proj = red_proj.reshape(len(red_proj), SAMP_WIDTH, SAMP_HEIGHT)
+			green_proj = code.dot(green_basis)
+			green_proj = green_proj.reshape(len(green_proj), SAMP_WIDTH, SAMP_HEIGHT)
+			tinted = [ ]
+			for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
+				red = reconstruct_from_patches(red_proj[i1, i2], master.size[::-1])
+				red = red.reshape(master.size[1], master.size[0], 3) * numpy.reshape([1, 0, 0], (1, 1, 3)) 
+				green = reconstruct_from_patches(green_proj[i1, i2], master.size[::-1])
+				green = green.reshape(master.size[1], master.size[0], 3) * numpy.reshape([0, 1, 0], (1, 1, 3)) 
+				mix = red + green
+				tinted.append(mix)
+
