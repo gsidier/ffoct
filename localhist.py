@@ -12,6 +12,8 @@ import gc
 
 from skimage.feature import local_binary_pattern
 
+RESIZE_FACT = 1. / 10.
+
 def cum_counts(feat, bins = None):
 	"""
 	Given an N1 x N2 x ... Nn array of integer features F which take values 0 to M - 1, 
@@ -105,7 +107,7 @@ if __name__ == '__main__':
 				except IOError: # not an image?
 					print >> sys.stderr, "Cannot load '%s' - skipping" % path
 					continue
-				master = reduce_image(master)
+				master = reduce_image(master, RESIZE_FACT)
 				masters.append(master.image)
 				if not os.path.exists(master.path):
 					master.save()

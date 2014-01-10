@@ -2,6 +2,7 @@
 from sampset import SampleSet, Sample
 import config
 
+import os, sys
 import numpy
 import pylab
 from math import ceil, sqrt
@@ -34,12 +35,12 @@ class Timer(object):
 	def __exit__(self, *args):
 		print "completed in %f sec" % (time() - self.t0)
 
-def reduce(master):
+def reduce_image(master, fact):
 	samples = master.samples
 	w, h = master.image.size
 	res = samples.generate(master.path, 
 		('to8bit',), 
-		('resize', int(round(w * RESIZE_FACT)), int(round(h * RESIZE_FACT)), 'ANTIALIAS'))
+		('resize', int(round(w * fact)), int(round(h * fact)), 'ANTIALIAS'))
 	return res
 
 def display(fit):
@@ -108,7 +109,7 @@ if __name__ == '__main__':
 				except IOError: # not an image?
 					print >> sys.stderr, "Cannot load '%s' - skipping" % path
 					continue
-				master = reduce(master)
+				master = reduce_image(master, RESIZE_FACT)
 				if not os.path.exists(master.path):
 					master.save()
 				masters.append(master.image)
@@ -163,14 +164,14 @@ if __name__ == '__main__':
 				code_i = csr_matrix(code_i)
 				code.append(code_i)
 			code = sparse.vstack(code)
+	if (not restart) or steps[restart] <= steps['RECONSTRUCT']:
+		with Timer("Reconstruct images ..."):
+			# Reconstruct the input images from the projected patches.
 			basis = fit.components_ 
 			proj = code.dot(basis)
 			proj *= std
 			proj += mean
 			proj = proj.reshape(len(proj), SAMP_WIDTH, SAMP_HEIGHT)
-	if (not restart) or steps[restart] <= steps['RECONSTRUCT']:
-		with Timer("Reconstruct images ..."):
-			# Reconstruct the input images from the projected patches.
 			approxs = [ ]
 			errs = [ ]
 			for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
@@ -206,14 +207,17 @@ if __name__ == '__main__':
 		with Timer("Cluster patches using DBSCAN"):
 			dbscan = cluster.DBSCAN(eps = .1)
 			pclust = dbscan.fit(cond_distrib)
+		print Counter(pclust.labels_)
 	if (not restart) or steps[restart] <= steps['KMEANS']:
 		with Timer("Cluster patches using KMeans"):
-			kmeans = cluster.KMeans(n_clusters = 2)
+			kmeans = cluster.KMeans(n_clusters = 3)
 			kclust = kmeans.fit(cond_distrib)
+		print Counter(kclust.labels_)
 	if (not restart) or steps[restart] <= steps['TINT_IMAGE']:
 		with Timer("Tinting image"):
 			red_basis = basis * (kclust.labels_ == 0).reshape(N_COMP, 1)
 			green_basis = basis * (kclust.labels_ == 1).reshape(N_COMP, 1)
+			blue_basis = basis * (kclust.labels_ == 2).reshape(N_COMP, 1)
 			red_proj = code.dot(red_basis)
 			red_proj *= std
 			red_proj += mean
@@ -222,12 +226,18 @@ if __name__ == '__main__':
 			green_proj *= std
 			green_proj += mean
 			green_proj = green_proj.reshape(len(green_proj), SAMP_WIDTH, SAMP_HEIGHT)
+			blue_proj = code.dot(blue_basis)
+			blue_proj *= std
+			blue_proj += mean
+			blue_proj = blue_proj.reshape(len(blue_proj), SAMP_WIDTH, SAMP_HEIGHT)
 			tinted = [ ]
 			for (master, i1, i2) in zip(masters, idx[:-1], idx[1:]):
 				red = reconstruct_from_patches_2d(red_proj[i1:i2], master.size[::-1])
 				red = red.reshape(master.size[1], master.size[0], 1) * numpy.reshape([1, 0, 0], (1, 1, 3)) 
 				green = reconstruct_from_patches_2d(green_proj[i1:i2], master.size[::-1])
 				green = green.reshape(master.size[1], master.size[0], 1) * numpy.reshape([0, 1, 0], (1, 1, 3)) 
-				mix = red + green
+				blue = reconstruct_from_patches_2d(blue_proj[i1:i2], master.size[::-1])
+				blue = blue.reshape(master.size[1], master.size[0], 1) * numpy.reshape([0, 0, 1], (1, 1, 3)) 
+				mix = red + green + blue
 				tinted.append(mix)
 
