@@ -14,6 +14,10 @@ from skimage.feature import local_binary_pattern
 
 RESIZE_FACT = 1. / 10.
 
+SPLIT_THRESH = 1.2
+SPLIT_MAXSIZE = 200
+SPLIT_MINSIZE = 20
+
 def cum_counts(feat, bins = None):
 	"""
 	Given an N1 x N2 x ... Nn array of integer features F which take values 0 to M - 1, 
@@ -48,19 +52,21 @@ def local_histogram(counts, x1, x2):
 	return hist
 
 def split(counts, thresh, maxsize, minsize):
-	w, h = counts.shape
+	bins, w, h = counts.shape
 	w -= 1
 	h -= 1
 	def chi2(h1, h2):
 		return (.5 * (h1 - h2)**2 / (h1 + h2)).sum()
 	
 	def rec(x1, y1, x2, y2):
+		if min(x2 - x1, y2 - y1) <= minsize:
+			return (x1, y1, x2, y2)
 		l = max((x2 - x1) / 2, (y2 - y1) / 2)
 		assert x2 - x1 >= l # todo handle this case
 		assert y2 - y1 >= l # todo handle this case
-		regions = tuple((x, y, min(x + l, x2 - 1), min(y + l, y2 - 1)) 
-			for y in xrange(0, h - 1, maxsize) 
-			for x in xrange(0, w - 1, maxsize))
+		regions = tuple((x, y, min(x + l, x2), min(y + l, y2))
+			for y in [ y1, y1 + l ]
+			for x in [ x1, x1 + l ])
 		h0, h1, h2, h3 = list(local_histogram(counts, (x1_, y1_), (x2_, y2_)) for (x1_, y1_, x2_, y2_) in regions)
 		d01 = chi2(h0, h1)
 		d02 = chi2(h0, h2)
@@ -74,8 +80,33 @@ def split(counts, thresh, maxsize, minsize):
 			return (x1, y1, x2, y2)
 		else:
 			reg1 = tuple(rec(x1_, y1_, x2_, y2_) for (x1_, y1_, x2_, y2_) in regions)
+			return reg1
 	
-	return rec(0, 0, w, h)
+	regions = tuple((x, y, min(x + maxsize, w), min(y + maxsize, h))
+		for y in xrange(0, h - maxsize + 1, maxsize)
+		for x in xrange(0, w - maxsize + 1, maxsize))
+	
+	return tuple(rec(x1, y1, x2, y2) for (x1, y1, x2, y2) in regions)
+
+def depth_first_iter(regions):
+	if type(regions[0]) == int:
+		yield regions
+	else:
+		for r in regions:
+			for res in depth_first_iter(r):
+				yield res
+	
+def breadth_first_iter(regions):
+	cousins = [ regions ]
+	while cousins:
+		nephews = [ ]
+		for r in cousins:
+			if type(r[0]) == int:
+				yield r
+			else:
+				for child in r:
+					nephews.append(child)
+		cousins = nephews
 
 if __name__ == '__main__':
 	
@@ -86,7 +117,12 @@ if __name__ == '__main__':
 		restart, = sys.argv[1:]
 	
 	steps = dict([ (lbl, i) for (i, lbl) in enumerate([
+		'BEGIN',
 		'LOAD_IMG',
+		'CALC_FEATURES',
+		'FEATURE_HIST',
+		'SPLIT',
+		'END',
 	])])
 	
 	def require(step):
@@ -127,4 +163,11 @@ if __name__ == '__main__':
 			for (master, feat) in zip(masters, features):
 				cdf = cum_counts(feat)
 				cdfs.append(cdf)
+	
+	if require('SPLIT'):
+		with Timer("Split areas ... "):
+			trees = [ ]
+			for (master, cdf) in zip(masters, cdfs):
+				tree = split(cdf, SPLIT_THRESH, maxsize = SPLIT_MAXSIZE, minsize = SPLIT_MINSIZE)
+				trees.append(tree)
 
