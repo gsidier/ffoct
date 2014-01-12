@@ -56,7 +56,10 @@ def split(counts, thresh, maxsize, minsize):
 	w -= 1
 	h -= 1
 	def chi2(h1, h2):
-		return (.5 * (h1 - h2)**2 / (h1 + h2)).sum()
+		if numpy.all(h1 == 0) and numpy.all(h2 == 0):
+			return 0
+		I = (h1 != 0) | (h2 != 0)
+		return (.5 * (h1 - h2)[I]**2 / (h1 + h2)[I]).sum()
 	
 	def rec(x1, y1, x2, y2):
 		if min(x2 - x1, y2 - y1) <= minsize:
@@ -108,6 +111,12 @@ def breadth_first_iter(regions):
 					nephews.append(child)
 		cousins = nephews
 
+def plot_blocks(regions, **kwargs):
+	for x1, y1, x2, y2 in breadth_first_iter(regions):
+		if max(x2 - x1, y2 - y1) > SPLIT_MINSIZE:
+			pylab.vlines([y1, y2], x1, x2, **kwargs)
+			pylab.hlines([x1, x2], y1, y2, **kwargs)
+
 if __name__ == '__main__':
 	
 	import os, sys 
@@ -116,17 +125,13 @@ if __name__ == '__main__':
 	if sys.argv[1:]:
 		restart, = sys.argv[1:]
 	
-	steps = dict([ (lbl, i) for (i, lbl) in enumerate([
-		'BEGIN',
-		'LOAD_IMG',
-		'CALC_FEATURES',
-		'FEATURE_HIST',
-		'SPLIT',
-		'END',
-	])])
+	run = False
 	
 	def require(step):
-		return not restart or steps[restart] <= steps[step]
+		global run
+		run = run or not restart or step == restart
+		#not restart or steps[restart] <= steps[step]
+		return run
 	
 	if require('LOAD_IMG'):
 		with Timer("Load images ..."):
