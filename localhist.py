@@ -4,19 +4,24 @@ import config
 from ffoct import reduce_image, Timer
 
 import numpy
+import matplotlib.colors
 import pylab
 from math import ceil, sqrt
 from time import time
 from collections import Counter
 import gc
+import pdb
 
 from skimage.feature import local_binary_pattern
 
 RESIZE_FACT = 1. / 10.
 
 SPLIT_THRESH = 1.2
-SPLIT_MAXSIZE = 200
+SPLIT_MAXSIZE = 256
 SPLIT_MINSIZE = 20
+
+MERGE_GRACE = .1
+MERGE_THRESH = 2.
 
 def cum_counts(feat, bins = None):
 	"""
@@ -44,23 +49,29 @@ def cum_counts(feat, bins = None):
 		gc.collect()
 	return C
 
-def local_histogram(counts, x1, x2):
+def normalize_hist(hist):
+	norm = hist.sum()
+	return hist / norm if norm != 0 else hist
+
+def local_histogram(counts, x1, x2, normalize = True):
 	i1, j1 = x1
 	i2, j2 = x2
 	hist = counts[:, i2, j2] + counts[:, i1, j1] - counts[:, i1, j2] - counts[:, i2, j1]
-	hist /= hist.sum()
-	return hist
+	if normalize:
+		return normalize_hist(hist)
+	else:
+		return hist
 
+def chi2(h1, h2):
+	if numpy.all(h1 == 0) and numpy.all(h2 == 0):
+		return 0
+	I = (h1 != 0) | (h2 != 0)
+	return (.5 * (h1 - h2)[I]**2 / (h1 + h2)[I]).sum()
+	
 def split(counts, thresh, maxsize, minsize):
 	bins, w, h = counts.shape
 	w -= 1
 	h -= 1
-	def chi2(h1, h2):
-		if numpy.all(h1 == 0) and numpy.all(h2 == 0):
-			return 0
-		I = (h1 != 0) | (h2 != 0)
-		return (.5 * (h1 - h2)[I]**2 / (h1 + h2)[I]).sum()
-	
 	def rec(x1, y1, x2, y2):
 		if min(x2 - x1, y2 - y1) <= minsize:
 			return (x1, y1, x2, y2)
@@ -117,6 +128,12 @@ def plot_blocks(regions, **kwargs):
 			pylab.vlines([y1, y2], x1, x2, **kwargs)
 			pylab.hlines([x1, x2], y1, y2, **kwargs)
 
+def draw_regions(out, regions):
+	for i, (blocks, _, _) in regions.iteritems():
+		for (x1, y1, x2, y2) in blocks:
+			out[x1:x2, y1:y2] = i
+	return out
+
 if __name__ == '__main__':
 	
 	import os, sys 
@@ -149,10 +166,13 @@ if __name__ == '__main__':
 					print >> sys.stderr, "Cannot load '%s' - skipping" % path
 					continue
 				master = reduce_image(master, RESIZE_FACT)
-				masters.append(master.image)
 				if not os.path.exists(master.path):
 					master.save()
-				masters = masters[::-1]
+				master = numpy.array(master.image)
+				masters.append(master)
+			palette = numpy.random.rand(4000, 3)
+			discrete_cmap = matplotlib.colors.ListedColormap(palette, name = 'discrete')
+			pylab.register_cmap(name = 'discrete', cmap = discrete_cmap)
 	
 	if require('CALC_FEATURES'):
 		with Timer("Compute the features ..."):
@@ -175,4 +195,93 @@ if __name__ == '__main__':
 			for (master, cdf) in zip(masters, cdfs):
 				tree = split(cdf, SPLIT_THRESH, maxsize = SPLIT_MAXSIZE, minsize = SPLIT_MINSIZE)
 				trees.append(tree)
+	
+	if require('MERGE'):
+		with Timer("Merge ... "):
+			def key(i, j):
+				return min(i, j), max(i, j)
+			textures = [ ]
+			for (master, cdf, tree) in zip(masters, cdfs, trees):
+				# texture[x, y] = index of connected region with same texture
+				texture = numpy.zeros(master.shape, dtype = numpy.int32)
+				w, h = texture.shape
+				textures.append(texture)
+				#edges = { }  # dict (i, j) -> ((x1, y2), (x2, y2))
+				edges = set( )
+				regions = { } # dict of i -> ([block1, block2, ...], hist, area)
+				for (i, (x1, y1, x2, y2)) in enumerate(depth_first_iter(tree)):
+					texture[x1:x2, y1:y2] = i + 1
+					blocks = [ (x1, y1, x2, y2) ]
+					hist = local_histogram(cdf, (x1, y1), (x2, y2), normalize = False)
+					area = (x2 - x1) * (y2 - y1)
+					regions[i + 1] = (blocks, hist, area)
+				for (x1, y1, x2, y2) in depth_first_iter(tree):
+					i = texture[(x1 + x2) / 2, (y1 + y2) / 2]
+					for x in xrange(x1 + SPLIT_MINSIZE / 2, x2, SPLIT_MINSIZE):
+						y = y1 - 1
+						if y >= 0:
+							j = texture[x, y]
+							assert i != j
+							if j > 0:
+								edges.add(key(i, j))
+						y = y2
+						if y < h:
+							j = texture[x, y]
+							assert i != j
+							if j > 0:
+								edges.add(key(i, j))
+					for y in xrange(y1 + SPLIT_MINSIZE / 2, y2, SPLIT_MINSIZE):
+						x = x1 - 1
+						if x >= 0:
+							j = texture[x, y]
+							assert i != j
+							if j > 0:
+								edges.add(key(i, j))
+						x = x2
+						if x < w:
+							j = texture[x, y]
+							assert i != j
+							if j > 0:
+								edges.add(key(i, j))
+			MImax = 0.
+			N = len(edges)
+			chi2cache = { }
+			for i, j in edges:
+				blocks1, hist1, area1 = regions[i]
+				blocks2, hist2, area2 = regions[j]
+				hist1 = normalize_hist(hist1)
+				hist2 = normalize_hist(hist2)
+				chi2cache[key(i, j)] = chi2(hist1, hist2)
+			def MI(i, j):
+				blocks1, hist1, area1 = regions[i]
+				blocks2, hist2, area2 = regions[j]
+				area = min(area1, area2)
+				G = chi2cache.get(key(i, j))
+				if G is None:
+					hist1 = normalize_hist(hist1)
+					hist2 = normalize_hist(hist2)
+					G = chi2(hist1, hist2)
+					chi2cache[key(i, j)] = G
+				mi = area * G
+				return mi
+			for n in xrange(len(edges)):
+				MIcur, i0, j0 = min((MI(i, j), i, j) for (i, j) in edges)
+				i0, j0 = min(i0, j0), max(i0, j0)
+				edges = set( (i if i != j0 else i0, j if j != j0 else i0) for (i, j) in edges)
+				edges = set( key(i, j) for (i, j) in edges if i != j )
+				blocks1, hist1, area1 = regions[i0]
+				blocks2, hist2, area2 = regions[j0]
+				blocks = blocks1 + blocks2
+				hist = hist1 + hist2
+				area = area1 + area2
+				regions[i0] = blocks, hist, area
+				del regions[j0]
+				if float(n) / N > MERGE_GRACE and MIcur / MImax > MERGE_THRESH:
+					break
+				recalc = list((i, j) for (i, j) in chi2cache if i in (i0, j0) or j in (i0, j0))
+				for ij in recalc:
+					del chi2cache[ij]
+				MImax = max(MIcur, MImax)
+				print len(edges)
+				print MIcur, MImax
 
