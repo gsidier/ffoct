@@ -21,7 +21,7 @@ SPLIT_MAXSIZE = 256
 SPLIT_MINSIZE = 20
 
 MERGE_GRACE = .1
-MERGE_THRESH = 2.
+MERGE_THRESH = 1.5
 
 def cum_counts(feat, bins = None):
 	"""
@@ -243,45 +243,51 @@ if __name__ == '__main__':
 							assert i != j
 							if j > 0:
 								edges.add(key(i, j))
-			MImax = 0.
-			N = len(edges)
-			chi2cache = { }
-			for i, j in edges:
-				blocks1, hist1, area1 = regions[i]
-				blocks2, hist2, area2 = regions[j]
-				hist1 = normalize_hist(hist1)
-				hist2 = normalize_hist(hist2)
-				chi2cache[key(i, j)] = chi2(hist1, hist2)
-			def MI(i, j):
-				blocks1, hist1, area1 = regions[i]
-				blocks2, hist2, area2 = regions[j]
-				area = min(area1, area2)
-				G = chi2cache.get(key(i, j))
-				if G is None:
+				MImax = 0.
+				N = len(edges)
+				chi2cache = { }
+				for i, j in edges:
+					blocks1, hist1, area1 = regions[i]
+					blocks2, hist2, area2 = regions[j]
 					hist1 = normalize_hist(hist1)
 					hist2 = normalize_hist(hist2)
-					G = chi2(hist1, hist2)
-					chi2cache[key(i, j)] = G
-				mi = area * G
-				return mi
-			for n in xrange(len(edges)):
-				MIcur, i0, j0 = min((MI(i, j), i, j) for (i, j) in edges)
-				i0, j0 = min(i0, j0), max(i0, j0)
-				edges = set( (i if i != j0 else i0, j if j != j0 else i0) for (i, j) in edges)
-				edges = set( key(i, j) for (i, j) in edges if i != j )
-				blocks1, hist1, area1 = regions[i0]
-				blocks2, hist2, area2 = regions[j0]
-				blocks = blocks1 + blocks2
-				hist = hist1 + hist2
-				area = area1 + area2
-				regions[i0] = blocks, hist, area
-				del regions[j0]
-				if float(n) / N > MERGE_GRACE and MIcur / MImax > MERGE_THRESH:
-					break
-				recalc = list((i, j) for (i, j) in chi2cache if i in (i0, j0) or j in (i0, j0))
-				for ij in recalc:
-					del chi2cache[ij]
-				MImax = max(MIcur, MImax)
-				print len(edges)
-				print MIcur, MImax
-
+					chi2cache[key(i, j)] = chi2(hist1, hist2)
+				def MI(i, j):
+					blocks1, hist1, area1 = regions[i]
+					blocks2, hist2, area2 = regions[j]
+					area = min(area1, area2)
+					G = chi2cache.get(key(i, j))
+					if G is None:
+						hist1 = normalize_hist(hist1)
+						hist2 = normalize_hist(hist2)
+						G = chi2(hist1, hist2)
+						chi2cache[key(i, j)] = G
+					mi = area * G
+					return mi
+				for n in xrange(len(edges)):
+					MIcur, i0, j0 = min((MI(i, j), i, j) for (i, j) in edges)
+					i0, j0 = min(i0, j0), max(i0, j0)
+					edges = set( (i if i != j0 else i0, j if j != j0 else i0) for (i, j) in edges)
+					edges = set( key(i, j) for (i, j) in edges if i != j )
+					"""# faster? not really
+					relabel = list((i, j) for (i, j) in edges if i in (i0, j0) or j in (i0, j0))
+					edges.difference_update(relabel)
+					relabel = list(key(i0 if i == j0 else i, i0 if j == j0 else j) for (i, j) in relabel)
+					relabel = list((i, j) for (i, j) in relabel if i != j)
+					edges.update(relabel)
+					"""
+					blocks1, hist1, area1 = regions[i0]
+					blocks2, hist2, area2 = regions[j0]
+					blocks = blocks1 + blocks2
+					hist = hist1 + hist2
+					area = area1 + area2
+					regions[i0] = blocks, hist, area
+					del regions[j0]
+					if float(n) / N > MERGE_GRACE and MIcur / MImax > MERGE_THRESH:
+						break
+					recalc = list((i, j) for (i, j) in chi2cache if i in (i0, j0) or j in (i0, j0))
+					for ij in recalc:
+						del chi2cache[ij]
+					print len(edges), MIcur, MImax, MIcur / MImax
+					MImax = max(MIcur, MImax)
+				draw_regions(texture, regions)
