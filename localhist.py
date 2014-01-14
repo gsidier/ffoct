@@ -91,7 +91,7 @@ def split(counts, thresh, maxsize, minsize):
 		d23 = chi2(h2, h3)
 		dmin = min(d01, d02, d03, d12, d13, d23)
 		dmax = max(d01, d02, d03, d12, d13, d23)
-		if dmax / dmin < thresh:
+		if dmax < thresh * dmin:
 			return (x1, y1, x2, y2)
 		else:
 			reg1 = tuple(rec(x1_, y1_, x2_, y2_) for (x1_, y1_, x2_, y2_) in regions)
@@ -100,6 +100,15 @@ def split(counts, thresh, maxsize, minsize):
 	regions = tuple((x, y, min(x + maxsize, w), min(y + maxsize, h))
 		for y in xrange(0, h - maxsize + 1, maxsize)
 		for x in xrange(0, w - maxsize + 1, maxsize))
+	l = int(2. ** - floor(numpy.log2(maxsize / minsize)) * maxsize)
+	x2 = max(x for (_, _, x, y) in regions)
+	y2 = max(y for (_, _, x, y) in regions)
+	regions = regions + tuple((x, y, min(x + l, w), min(y + l, h))
+		for y in xrange(0, y2, l)
+		for x in xrange(x2, w - l, l))
+	regions = regions + tuple((x, y, min(x + l, w), min(y + l, h))
+		for y in xrange(y2, h - l, l)
+		for x in xrange(0, w - l, l))
 	
 	return tuple(rec(x1, y1, x2, y2) for (x1, y1, x2, y2) in regions)
 
@@ -303,7 +312,7 @@ if __name__ == '__main__':
 						node2edges[i].add((i, j))
 						node2edges[j].add((i, j))
 					
-					print len(regions), MIcur, MImax, MIcur / MImax
+					#print len(regions), MIcur, MImax, MIcur / MImax
 					MImax = max(MIcur, MImax)
 				draw_regions(texture, regions)
 
