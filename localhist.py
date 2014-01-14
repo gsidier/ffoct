@@ -11,6 +11,7 @@ from time import time
 from collections import Counter
 import gc
 import pdb
+from blist import sortedlist
 
 from skimage.feature import local_binary_pattern
 
@@ -21,7 +22,7 @@ SPLIT_MAXSIZE = 256
 SPLIT_MINSIZE = 20
 
 MERGE_GRACE = .1
-MERGE_THRESH = 1.5
+MERGE_THRESH = 1.3
 
 def cum_counts(feat, bins = None):
 	"""
@@ -245,37 +246,32 @@ if __name__ == '__main__':
 								edges.add(key(i, j))
 				MImax = 0.
 				N = len(edges)
-				chi2cache = { }
-				for i, j in edges:
-					blocks1, hist1, area1 = regions[i]
-					blocks2, hist2, area2 = regions[j]
-					hist1 = normalize_hist(hist1)
-					hist2 = normalize_hist(hist2)
-					chi2cache[key(i, j)] = chi2(hist1, hist2)
 				def MI(i, j):
 					blocks1, hist1, area1 = regions[i]
 					blocks2, hist2, area2 = regions[j]
 					area = min(area1, area2)
-					G = chi2cache.get(key(i, j))
-					if G is None:
-						hist1 = normalize_hist(hist1)
-						hist2 = normalize_hist(hist2)
-						G = chi2(hist1, hist2)
-						chi2cache[key(i, j)] = G
+					hist1 = normalize_hist(hist1)
+					hist2 = normalize_hist(hist2)
+					G = chi2(hist1, hist2)
 					mi = area * G
 					return mi
+				
+				MIcache = dict([ ((i, j), MI(i, j)) for (i, j) in edges ])
+				MIlist = sortedlist(edges, key = lambda (i, j): MIcache[(i, j)])
+				node2edges = dict([ (i, set()) for i in xrange(1 + sum(1 for _ in depth_first_iter(tree))) ])
+				for (i, j) in edges:
+					node2edges[i].add((i, j))
+					node2edges[j].add((i, j))
+				
 				for n in xrange(len(edges)):
-					MIcur, i0, j0 = min((MI(i, j), i, j) for (i, j) in edges)
-					i0, j0 = min(i0, j0), max(i0, j0)
-					edges = set( (i if i != j0 else i0, j if j != j0 else i0) for (i, j) in edges)
-					edges = set( key(i, j) for (i, j) in edges if i != j )
-					"""# faster? not really
-					relabel = list((i, j) for (i, j) in edges if i in (i0, j0) or j in (i0, j0))
-					edges.difference_update(relabel)
-					relabel = list(key(i0 if i == j0 else i, i0 if j == j0 else j) for (i, j) in relabel)
-					relabel = list((i, j) for (i, j) in relabel if i != j)
-					edges.update(relabel)
-					"""
+					i0, j0 = MIlist.pop(0)
+					MIcur = MIcache[(i0, j0)]
+					
+					# stop?
+					if float(n) / N > MERGE_GRACE and MIcur / MImax > MERGE_THRESH:
+						break
+					
+					# merge
 					blocks1, hist1, area1 = regions[i0]
 					blocks2, hist2, area2 = regions[j0]
 					blocks = blocks1 + blocks2
@@ -283,11 +279,31 @@ if __name__ == '__main__':
 					area = area1 + area2
 					regions[i0] = blocks, hist, area
 					del regions[j0]
-					if float(n) / N > MERGE_GRACE and MIcur / MImax > MERGE_THRESH:
-						break
-					recalc = list((i, j) for (i, j) in chi2cache if i in (i0, j0) or j in (i0, j0))
-					for ij in recalc:
-						del chi2cache[ij]
-					print len(edges), MIcur, MImax, MIcur / MImax
+					
+					# relabel nodes j0 -> i0
+					remove = node2edges[i0].union(node2edges[j0])
+					recalc = set([ key(i0 if i == j0 else i, i0 if j == j0 else j) for (i, j) in remove ])
+					recalc.discard((i0, i0))
+					
+					for (i, j) in remove:
+						MIlist.discard((i, j))
+					
+					for (i, j) in remove:
+						del MIcache[(i, j)]
+					for (i, j) in recalc:
+						MIcache[(i, j)] = MI(i, j)
+						
+					for (i, j) in remove:
+						node2edges[i].discard((i, j))
+						node2edges[j].discard((i, j))
+					
+					# recompute all i0's edges
+					for (i, j) in recalc:
+						MIlist.add((i, j))
+						node2edges[i].add((i, j))
+						node2edges[j].add((i, j))
+					
+					print len(regions), MIcur, MImax, MIcur / MImax
 					MImax = max(MIcur, MImax)
 				draw_regions(texture, regions)
+
