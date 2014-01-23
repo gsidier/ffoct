@@ -46,7 +46,17 @@ class SampleSet(object):
 	def generate(self, base, *ops):
 		# base is a cached version for a subset of the transformations.
 		# i0 is the start index of the ops that need to be applied to it.
+		
+		# fix dir if necessary:
+		dirname = os.path.dirname(base)
+		if dirname == '':
+			if '.' in base:
+				base = os.path.join(self.config.derived_dir, base)
+			else:
+				base = os.path.join(self.config.master_dir, base)
+			
 		path = base
+		
 		i0 = 0
 		for i, op_args in enumerate(ops):
 			tag = '-'.join(map(str, op_args))
