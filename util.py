@@ -5,6 +5,18 @@ import numpy
 from copy import copy
 from numpy import median
 from scipy.stats.mstats import mquantiles
+from time import time
+import os, sys
+
+class Timer(object):
+	def __init__(self, msg):
+		self.msg = msg
+	def __enter__(self):
+		self.t0 = time()
+		print self.msg, 
+		sys.stdout.flush()
+	def __exit__(self, *args):
+		print "completed in %f sec" % (time() - self.t0)
 
 def cvim2array(im):
 	return numpy.array(im)[:,:,::-1]

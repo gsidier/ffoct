@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 from sampset import SampleSet, Sample
 import config
-from ffoct import reduce_image, Timer
+from ffoct import reduce_image
+from util import Timer
 
 import numpy
 import matplotlib.colors

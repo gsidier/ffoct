@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from sampset import SampleSet, Sample
 import config
+from util import Timer
 
 import os, sys
 import numpy
@@ -24,16 +25,6 @@ SAMP_HEIGHT = 7
 N_COMP = 400
 
 N_ATOMS = 2
-
-class Timer(object):
-	def __init__(self, msg):
-		self.msg = msg
-	def __enter__(self):
-		self.t0 = time()
-		print self.msg, 
-		sys.stdout.flush()
-	def __exit__(self, *args):
-		print "completed in %f sec" % (time() - self.t0)
 
 def reduce_image(master, fact):
 	samples = master.samples
