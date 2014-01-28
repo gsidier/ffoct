@@ -9,7 +9,10 @@ class Texton(object):
 		"""
 		filt: a skimage-style filter function
 		params: [ { param: value } ]
-		cluster: a sklearn-style cluster object
+		cluster: a function features -> cluster_centers, labels
+			where features: [ W x H x Ndim ] float arrays
+			      cluster_centers: Nclust x Ndim matrix
+			      labels: [ W x H ] int matrices
 		"""
 		self.filter = filt
 		self.params = params
@@ -18,21 +21,18 @@ class Texton(object):
 	def _calc_features(self, dataset):
 		self.dataset = dataset
 		n = len(self.params)
-		X = [ ]
-		for master_path, masks in dataset.data.iteritems():
-			master = dataset.samples.generate(master_path)
+		self.features = [ ]
+		self.masters = [ dataset.samples.generate(master_path) for master_path in dataset.data ]
+		for master in self.masters:
 			w, h = master.image.size
 			with Timer("calc features .. "):
-				features = list(self.filter(master.image, ** params) for params in self.params)
-				features = numpy.array(features)
-				features = features.reshape(n, w * h)
-				features = features.T
-				X.append(features)
-		self.features = numpy.vstack(X)
+				f = numpy.array(list(self.filter(master.image, ** params) for params in self.params))
+				f = f.transpose((1, 2, 0))
+				self.features.append(f)
 	
 	def _cluster(self):
 		with Timer("cluster ... "):
-			self.textons = self.cluster.fit(self.features)
+			self.textons = self.cluster(self.features)
 	
 	def calc(self, dataset):
 		self._calc_features(dataset)
@@ -88,7 +88,7 @@ if __name__ == '__main__':
 			textons = Texton(
 				config.texton.filter_bank.function, 
 				config.texton.filter_bank.params,
-				config.texton.cluster)
+				config.texton.quantize)
 			
 			textons._calc_features(training_data)
 		
