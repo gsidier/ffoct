@@ -11,7 +11,7 @@ def find_samples(im, mask, w, h, dw = None, dh = None):
 		dw = w
 	if dh is None:
 		dh = h
-	W, H = im.shape[:2]
+	W, H = numpy.shape(im)[:2]
 	found = [ ]
 	for i in xrange(0, W - w + 1, dw):
 		for j in xrange(0, H - h + 1, dh):

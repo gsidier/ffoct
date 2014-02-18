@@ -24,22 +24,25 @@ if __name__ == '__main__':
 	from optparse import OptionParser
 	import pickle
 	
-	# 1. read patches test set
-	# 2. compute features
-	# 3. train classifier
+	# 1. load image data
+	# 2. load pixel features (pixel -> texton)
+	# 3. generate samples
+	# 4. generate sample features: sample -> histogram of pixel features
+	# 5. train classifier on subset of samples
+	# 6. save classifier
 	
-	USAGE = "%prog [<options>] <trainingdata>"
+	USAGE = "%prog [<options>] <trainingdata> <textons>"
 	
 	optp = OptionParser(usage = USAGE)
 	optp.add_option('-r', '--restart')
 	
-	PATCH_WIDTH = 10
-	PATCH_HEIGHT = 10
+	PATCH_WIDTH = 40
+	PATCH_HEIGHT = 40
 	
 	opts, args = optp.parse_args()
 	
 	try:
-		TRAININGDATA_PATH, = args
+		TRAININGDATA_PATH, TEXTON_PATH, = args
 	except:
 		optp.print_usage()
 		sys.exit(1)
@@ -59,12 +62,10 @@ if __name__ == '__main__':
 			trainingdata_module = __import__(TRAININGDATA_PATH, fromlist = [True])
 			trainingdata = trainingdata_module.TRAINING_DATA
 			training_data = DataSet(trainingdata, samples)
-		
-	# 2. compute features
-	if (not restart) or steps[restart] <= steps['CALC_FEATURES']:
-		with Timer("Calc features ... "):
-			FeatureClass = config.FeatureClass
-			features = FeatureClass()
-			
-			features.calc(training_data)
-			
+	
+	# 2. load pixel features
+	if (not restart) or steps[restart] <= steps['LOAD_FEATURES']:
+		with Timer("Load features ... "):
+			with file(TEXTON_PATH, 'r') as texton_file:
+				centroids, labels = pickle.load(texton_file)
+				
