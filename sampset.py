@@ -13,6 +13,9 @@ sequence of transformations is saved there, then the saved copy is simply read.
 import os
 
 from PIL import Image
+from skimage.filter import denoise_tv_bregman
+from skimage.filter import gabor_filter 
+import numpy
 
 class SampleSetConfig:
 	
@@ -29,12 +32,12 @@ class SampleSet(object):
 		self.config = config
 	
 	def derive_name(self, name, tag):
-		parts = name.split('.')
+		base, ext = os.path.splitext(name)
+		parts = base.split('_')
 		ident = parts[0]
-		ext = parts[-1]
-		tags = parts[1:-1]
+		tags = parts[1:]
 		tags.append(tag)
-		res = '.'.join([ident] + tags + [ext])
+		res = '_'.join([ident] + tags) + ext
 		return res
 	
 	def derive_path(self, path, tag):
@@ -44,13 +47,17 @@ class SampleSet(object):
 		return path
 	
 	def generate(self, base, *ops):
+		"""
+		base: path of base
+		ops: list of (op, arg1, arg2, ...)
+		"""
 		# base is a cached version for a subset of the transformations.
 		# i0 is the start index of the ops that need to be applied to it.
 		
 		# fix dir if necessary:
 		dirname = os.path.dirname(base)
 		if dirname == '':
-			if '.' in base:
+			if '_' in base:
 				base = os.path.join(self.config.derived_dir, base)
 			else:
 				base = os.path.join(self.config.master_dir, base)
@@ -59,7 +66,7 @@ class SampleSet(object):
 		
 		i0 = 0
 		for i, op_args in enumerate(ops):
-			tag = '-'.join(map(str, op_args))
+			tag = ','.join(map(str, op_args))
 			path = self.derive_path(path, tag)
 			if os.path.exists(path):
 				base = path
@@ -79,8 +86,8 @@ class Sample(object):
 		self.image = image
 		self.path = path
 	
-	def transf(self, op, args):
-		tag = '-'.join(map(str, [op] + list(args)))
+	def transf(self, op, args = ()):
+		tag = ','.join(map(str, [op] + list(args)))
 		path = self.samples.derive_path(self.path, tag)
 		if os.path.exists(path):
 			im = Image.open(path)
@@ -106,18 +113,67 @@ class Sample(object):
 		return self.image.convert('I').point(lambda i: i * (1./256.)).convert('L')
 	
 	def to8bit(self):
-		return self.transf('to8bit', ())
+		return self.transf('to8bit')
+	
+	def _denoise(self, weight):
+		return denoise_tv_bregman(numpy.array(self.image), weight)
+	
+	def denoise(self, weight):
+		return self.transf('denoise', (weight,))
+	
+	def _contrast(self, pow):
+		im = numpy.array(self.image)
+		im = im / float(numpy.max(im))
+		return im ** pow
+	
+	def contrast(self, pow):
+		return self.transf('contrast', (pow,))
+	
+	def _gabor(self, *params):
+		real, imag = gabor_filter(numpy.array(self.image), *params)
+		return real + 1j * imag
+	
+	def gabor(self, *params):
+		return self.transf('gabor', tuple(params))
+	
+	def _real(self):
+		return numpy.real(self.image)
+	
+	def real(self):
+		return self.transf('real')
+	
+	def _imag(self):
+		return numpy.imag(self.image)
+	
+	def imag(self):
+		return self.transf('imag')
+	
+	def _abs(self):
+		return numpy.abs(self.image)
+	
+	def _renorm(self):
+		return (self.image - numpy.mean(self.image)) / numpy.std(self.image)
+	
+	def renorm(self):
+		return self.transf('renorm')
+	
+	def abs(self):
+		return self.transf('abs')
 	
 	def save(self, format = None, **options):
+		if hasattr(self.image, 'save'):
+			image = self.image
+		else:
+			image = Image.fromarray(self.image)
 		if format is None:
-			format = self.path.split('.')[-1]
-		ext = '.' + format.lower()
+			_, format = os.path.splitext(self.path)
+		ext = format.lower()
 		format = Image.EXTENSION[ext]
 		dirname = os.path.dirname(self.path)
 		name = os.path.basename(self.path)
-		parts = name.split('.')
-		parts[-1] = ext[1:]
-		name = '.'.join(parts)
+		base, _ = os.path.splitext(name)
+		parts = base.split('_')
+		name = '_'.join(parts) + ext
 		path = os.path.join(dirname, name)
-		self.image.save(path, format, **options)
+		image.save(path, format, **options)
 
