@@ -7,6 +7,6 @@ Full-field optical coherence tomography (FFOCT) is a non-invasive technique for 
 high-definition tissue images at the cellular level.
 
 Images obtained are similar to those of classical histology obtained by biopsy but with characteristics 
-that are specific to this method.
+that are specific to this method. Notably the cell nuclei are not visible and so simple cell counting is not an option.
 
 The purpose of this project is to develop algorithms for the automated tissue image analysis of images obtained by FFOCT.
